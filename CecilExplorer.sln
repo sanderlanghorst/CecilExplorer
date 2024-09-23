@@ -1,6 +1,8 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CecilExplorer", "CecilExplorer\CecilExplorer.csproj", "{FFFD02A0-0C7D-4AB5-AE0F-91BA72C5232B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CecilExplorer.Cli", "CecilExplorer.Cli\CecilExplorer.Cli.csproj", "{FFFD02A0-0C7D-4AB5-AE0F-91BA72C5232B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CecilExplorer", "CecilExplorer\CecilExplorer.csproj", "{CC5F9019-5077-42B4-9349-7ECEB93C7442}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -12,5 +14,9 @@ Global
 		{FFFD02A0-0C7D-4AB5-AE0F-91BA72C5232B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FFFD02A0-0C7D-4AB5-AE0F-91BA72C5232B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FFFD02A0-0C7D-4AB5-AE0F-91BA72C5232B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CC5F9019-5077-42B4-9349-7ECEB93C7442}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CC5F9019-5077-42B4-9349-7ECEB93C7442}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CC5F9019-5077-42B4-9349-7ECEB93C7442}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CC5F9019-5077-42B4-9349-7ECEB93C7442}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
