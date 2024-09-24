@@ -102,12 +102,13 @@ public class ModuleLoader
                 p.SetMethod?.Body?.Instructions ?? Enumerable.Empty<Instruction>()));
         }
 
+        MethodDefinition? currentMethod = null;
         foreach (var instruction in instructions)
         {
             switch (instruction.Operand)
             {
                 case MethodDefinition methodDefinition:
-                    //GetTypeReferences(methodDefinition.DeclaringType);
+                    currentMethod = methodDefinition;
                     break;
                 case MethodReference methodReference:
                     if (methodReference.DeclaringType != typeDefinition)
@@ -117,7 +118,8 @@ public class ModuleLoader
                             FromType = typeDefinition,
                             ToType = methodReference.DeclaringType.Resolve(),
                             ReferenceType = methodReference,
-                            ReferenceName = methodReference.Name
+                            FromName = currentMethod?.Name,
+                            ToName = methodReference.Name
                         });
                         if (!methodReference.DeclaringType.Module.Assembly.IsSystemLibrary())
                             _typesToImport.Enqueue(methodReference.DeclaringType);
@@ -134,7 +136,20 @@ public class ModuleLoader
                     // GetTypeReferences(fieldDefinition.DeclaringType);
                     break;
                 case FieldReference fieldReference:
-                    //GetTypeReferences(fieldReference.DeclaringType.Resolve());
+                    break;
+                    if (fieldReference.DeclaringType != typeDefinition)
+                    {
+                        References.Add(new Reference
+                        {
+                            FromType = typeDefinition,
+                            ToType = fieldReference.DeclaringType.Resolve(),
+                            ReferenceType = fieldReference,
+                            FromName = currentMethod?.Name,
+                            ToName = fieldReference.Name
+                        });
+                        if (!fieldReference.DeclaringType.Scope.IsSystemLibrary())
+                            _typesToImport.Enqueue(fieldReference.DeclaringType);
+                    }
                     break;
             }
         }

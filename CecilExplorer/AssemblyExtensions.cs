@@ -14,4 +14,9 @@ public static class AssemblyExtensions
     {
         return SystemAssemblies.Any(assembly.FullName.Contains);
     }
+    public static bool IsSystemLibrary(this IMetadataScope scope)
+    {
+        return scope is AssemblyNameReference assemblyNameReference 
+               && SystemAssemblies.Any(assemblyNameReference.FullName.Contains);
+    }
 }
