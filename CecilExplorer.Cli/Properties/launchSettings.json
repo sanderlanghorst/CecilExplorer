@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "CecilExplorer.Cli": {
+      "commandName": "Project",
+      "commandLineArgs": "dump -a C:\\workspaces\\my\\CecilExplorer\\CecilExplorer.Cli\\bin\\Debug\\net8.0\\CecilExplorer.Cli.dll -o out.md -i CecilExplorer* -t CecilExplorer.MermaidExport",
+      "environmentVariables": {
+        
+      }
+    }
+  }
+}

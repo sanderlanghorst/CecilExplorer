@@ -6,10 +6,13 @@ namespace CecilExplorer.MermaidExport;
 public class Exporter
 {
     private readonly string _path;
+    private readonly string _filterTerm;
+    private static readonly char[] ValidChars = new []{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '-'};
 
-    public Exporter(string path)
+    public Exporter(string path, string filterTerm)
     {
         _path = path;
+        _filterTerm = filterTerm;
     }
     public void SaveToFile(ModuleLoader loader)
     {
@@ -20,7 +23,6 @@ public class Exporter
         File.WriteAllText(_path, sb.ToString());
     }
     
-    private static char[] ValidChars = new []{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '-'};
     private static string Sanitize(string name)
     {
         return new string(name.Where(ValidChars.Contains).ToArray());
@@ -29,7 +31,7 @@ public class Exporter
     {
         // create a mermaid class diagram
         sb.AppendLine("flowchart LR");
-        foreach(var moduleGroup in loader.References.Select(r => r.FromType).GroupBy(r => r.Module.Name))
+        foreach(var moduleGroup in loader.References.Where(SelectReference).Select(r => r.FromType).GroupBy(r => r.Module.Name))
         {
             sb.AppendLine($"\tsubgraph {moduleGroup.Key}");
             foreach (var type in moduleGroup.Distinct())
@@ -40,7 +42,7 @@ public class Exporter
             sb.AppendLine("\tend");
         }
 
-        foreach (var tref in loader.References.Where(r => !r.ToType.Module.Assembly.IsSystemLibrary()).GroupBy(r => new {r.FromType, r.ToType}))
+        foreach (var tref in loader.References.Where(r => !r.ToType.Module.Assembly.IsSystemLibrary() && SelectReference(r)).GroupBy(r => new {r.FromType, r.ToType}))
         {
             sb.Append("\t");
             sb.Append(Sanitize(tref.Key.FromType.FullName));
@@ -49,6 +51,15 @@ public class Exporter
             sb.Append(" --> ");
             sb.AppendLine(Sanitize(tref.Key.ToType.FullName));
         }
+    }
+
+    private bool SelectReference(Reference reference)
+    {
+        if(_filterTerm == string.Empty)
+        {
+            return true;
+        }
+        return reference.FromType.FullName.Contains(_filterTerm) || reference.ToType.FullName.Contains(_filterTerm);
     }
     private void ExportClassDiagram(StringBuilder sb, ModuleLoader loader)
     {

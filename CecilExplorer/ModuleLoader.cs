@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 
@@ -9,14 +10,38 @@ public class ModuleLoader
     private readonly List<AssemblyDefinition> _loadedAssemblies = [];
     private ConcurrentQueue<ModuleReference> _assembliesToImport = [];
     private readonly ConcurrentQueue<TypeReference> _typesToImport = [];
+    private readonly Regex _internalNamePattern;
 
     public List<TypeDefinition> Types = [];
     public List<Reference> References = [];
     public List<ModuleDefinition> Modules = [];
+    private readonly string _fileName;
 
-    public Task Load(string file)
+    public ModuleLoader(string file, string internalNamePattern)
     {
-        var assembly = AssemblyDefinition.ReadAssembly(file);
+        _internalNamePattern = GetPattern(internalNamePattern);
+        _fileName = file;
+    }
+
+    private Regex GetPattern(string internalNamePattern)
+    {
+        var pattern = string.Join("|", internalNamePattern.Split(',')
+            .Select(s => s
+                .Replace(".", "\\.")
+                .Replace("*", ".{0,100}")
+                .Replace("?", string.Empty)
+                .Replace("+", string.Empty)
+                .Replace("[", string.Empty)
+                .Replace("]", string.Empty)
+                .Trim())
+        );
+        
+        return new Regex(pattern, RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    }
+
+    public Task Load()
+    {
+        var assembly = AssemblyDefinition.ReadAssembly(_fileName);
         _loadedAssemblies.Add(assembly);
 
         var modules = assembly.Modules;
@@ -53,13 +78,24 @@ public class ModuleLoader
             var type = typeReference.Resolve();
             Types.Add(type);
 
-            if (!type.Module.Assembly.IsSystemLibrary())
+            if (IsUserModule(type))
             {
                 GetTypeReferences(type);
             }
         }
 
         return Task.CompletedTask;
+    }
+    
+    private bool IsUserModule(TypeReference type)
+    {
+        return _internalNamePattern.IsMatch(type.Module.Assembly.FullName)
+               && !type.Module.Assembly.IsSystemLibrary();
+    }
+    private bool IsUserModule(AssemblyDefinition assembly)
+    {
+        return _internalNamePattern.IsMatch(assembly.FullName)
+               && !assembly.IsSystemLibrary();
     }
 
 
@@ -71,7 +107,7 @@ public class ModuleLoader
         }
 
         _loadedAssemblies.Add(assembly);
-        if (assembly.IsSystemLibrary())
+        if (!IsUserModule(assembly))
             return;
 
         foreach (var module in assembly.Modules)
@@ -121,7 +157,7 @@ public class ModuleLoader
                             FromName = currentMethod?.Name,
                             ToName = methodReference.Name
                         });
-                        if (!methodReference.DeclaringType.Module.Assembly.IsSystemLibrary())
+                        if (IsUserModule(methodReference.DeclaringType))
                             _typesToImport.Enqueue(methodReference.DeclaringType);
                     }
 
