@@ -16,11 +16,13 @@ public class ModuleLoader
     public List<Reference> References = [];
     public List<ModuleDefinition> Modules = [];
     private readonly string _fileName;
-
+    private ConcurrentBag<string> _failedAssemblies = new();
+    private readonly string _folder;
     public ModuleLoader(string file, string internalNamePattern)
     {
         _internalNamePattern = GetPattern(internalNamePattern);
         _fileName = file;
+        _folder = Path.GetDirectoryName(file) ?? string.Empty;
     }
 
     private Regex GetPattern(string internalNamePattern)
@@ -61,7 +63,7 @@ public class ModuleLoader
     {
         while (_typesToImport.TryDequeue(out var typeReference))
         {
-            if (Types.Contains(typeReference))
+            if (Types.Any(t => t.FullName.Equals(typeReference.GetElementType().FullName)))
             {
                 continue;
             }
@@ -75,7 +77,7 @@ public class ModuleLoader
                 }
             }
 
-            var type = typeReference.Resolve();
+            var type = GetTypeByReference(typeReference);
             Types.Add(type);
 
             if (IsUserModule(type))
@@ -89,8 +91,21 @@ public class ModuleLoader
     
     private bool IsUserModule(TypeReference type)
     {
-        return _internalNamePattern.IsMatch(type.Module.Assembly.FullName)
-               && !type.Module.Assembly.IsSystemLibrary();
+        if (type.Scope is AssemblyNameReference anr)
+        {
+            return _internalNamePattern.IsMatch(anr.Name) && !anr.IsSystemLibrary(); 
+        }
+
+        try
+        {
+            return type.Module != null ? _internalNamePattern.IsMatch(type.Module.Assembly.Name.Name)
+                   && !type.Module.Assembly.IsSystemLibrary()
+                    : _internalNamePattern.IsMatch(type.FullName);    
+        }catch(Exception e)
+        {
+            return false;
+        }
+        
     }
     private bool IsUserModule(AssemblyDefinition assembly)
     {
@@ -149,10 +164,11 @@ public class ModuleLoader
                 case MethodReference methodReference:
                     if (methodReference.DeclaringType != typeDefinition)
                     {
+                        var toType = GetTypeByReference(methodReference.DeclaringType);
                         References.Add(new Reference
                         {
                             FromType = typeDefinition,
-                            ToType = methodReference.DeclaringType.Resolve(),
+                            ToType = toType,
                             ReferenceType = methodReference,
                             FromName = currentMethod?.Name,
                             ToName = methodReference.Name
@@ -189,5 +205,56 @@ public class ModuleLoader
                     break;
             }
         }
+    }
+    
+    private TypeDefinition GetTypeByReference(TypeReference typeReference)
+    {
+        var anr = typeReference.Scope as AssemblyNameReference;
+        if (anr != null && _failedAssemblies.Contains(anr.FullName)) return GetDefault(typeReference);
+        
+        var loadedType = Types.FirstOrDefault(t => t.FullName.Equals(typeReference.FullName));
+        if (loadedType != null) return loadedType;
+        
+        try
+        {
+            if (!IsUserModule(typeReference)) return GetDefault(typeReference);
+
+            var referencedAssembly = GetReferencedAssemmbly(typeReference);
+            if (referencedAssembly == null) return GetDefault(typeReference);
+            if (typeReference.Module.Assembly.Equals(referencedAssembly)) return typeReference.Resolve();
+            
+            var type = referencedAssembly.Modules.Select(m => m.GetTypes().First(t => t.FullName.Equals(typeReference.FullName))).First();
+            if (!Types.Contains(type)) Types.Add(type);
+            
+            return type;
+        }
+        catch (Exception e)
+        {
+            _failedAssemblies.Add(anr != null 
+                ? anr.FullName
+                : typeReference.Module.Assembly.FullName);
+        }
+
+        return GetDefault(typeReference);
+        TypeDefinition GetDefault(TypeReference r) => new(r.Namespace, r.Name, TypeAttributes.Class);
+    }
+
+    private AssemblyDefinition? GetReferencedAssemmbly(TypeReference typeReference)
+    {
+        var referencedAssembly = _loadedAssemblies.FirstOrDefault(a => a.FullName.Equals(typeReference.AssemblyName()));
+        if (referencedAssembly == null)
+        {
+            try
+            {
+                referencedAssembly = AssemblyDefinition.ReadAssembly(Path.Combine(_folder,$"{typeReference.Scope.Name}.dll"));
+                _loadedAssemblies.Add(referencedAssembly);
+            }
+            catch (Exception e)
+            {
+                return null;
+            }
+        }
+
+        return referencedAssembly;
     }
 }

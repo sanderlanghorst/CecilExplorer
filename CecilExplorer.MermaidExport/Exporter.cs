@@ -1,5 +1,6 @@
 ﻿using System.Text;
 using CecilExplorer;
+using Mono.Cecil;
 
 namespace CecilExplorer.MermaidExport;
 
@@ -42,15 +43,31 @@ public class Exporter
             sb.AppendLine("\tend");
         }
 
-        foreach (var tref in loader.References.Where(r => !r.ToType.Module.Assembly.IsSystemLibrary() && SelectReference(r)).GroupBy(r => new {r.FromType, r.ToType}))
+        try
         {
-            sb.Append("\t");
-            sb.Append(Sanitize(tref.Key.FromType.FullName));
-            sb.Append(" -- ");
-            sb.Append(string.Join(", ", tref.Select(r => r.ToName).Distinct()));
-            sb.Append(" --> ");
-            sb.AppendLine(Sanitize(tref.Key.ToType.FullName));
+            foreach (var tref in loader.References
+                         .Where(r => SelectReference(r) && !IsSystemLibrary(r.ToType))
+                         .GroupBy(r => new { r.FromType, r.ToType }))
+            {
+                sb.Append("\t");
+                sb.Append(Sanitize(tref.Key.FromType.FullName));
+                sb.Append(" -- ");
+                sb.Append(string.Join(", ", tref.Select(r => r.ToName).Distinct()));
+                sb.Append(" --> ");
+                sb.AppendLine(Sanitize(tref.Key.ToType.FullName));
+            }
         }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+        }
+    }
+
+    private bool IsSystemLibrary(TypeDefinition toType)
+    {
+        return toType.Module == null ||
+               toType.Module.Assembly == null ||
+            toType.Module.Assembly.IsSystemLibrary();
     }
 
     private bool SelectReference(Reference reference)

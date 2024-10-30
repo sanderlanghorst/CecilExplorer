@@ -7,6 +7,13 @@
       "environmentVariables": {
         
       }
+    },
+    "CecilExplorer.Cli with Valk": {
+      "commandName": "Project",
+      "commandLineArgs": "dump -a C:\\workspaces\\valk\\web_ValkPlatform\\Valk.Website\\bin\\Valk.Website.dll -o out.md -i Valk* -t Valk.Website.Classes",
+      "environmentVariables": {
+
+      }
     }
   }
 }
