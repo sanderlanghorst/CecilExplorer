@@ -7,14 +7,14 @@ namespace CecilExplorer;
 
 public class ModuleLoader
 {
-    private readonly List<AssemblyDefinition> _loadedAssemblies = [];
-    private ConcurrentQueue<ModuleReference> _assembliesToImport = [];
+    private static readonly SemaphoreSlim _assemlbySemaphore = new(1, 1);
+    private readonly ConcurrentBag<AssemblyDefinition> _loadedAssemblies = [];
     private readonly ConcurrentQueue<TypeReference> _typesToImport = [];
     private readonly Regex _internalNamePattern;
 
-    public List<TypeDefinition> Types = [];
-    public List<Reference> References = [];
-    public List<ModuleDefinition> Modules = [];
+    public ConcurrentBag<TypeDefinition> Types = [];
+    public ConcurrentBag<Reference> References = [];
+    public ConcurrentBag<ModuleDefinition> Modules = [];
     private readonly string _fileName;
     private readonly ConcurrentBag<string> _failedAssemblies = new();
     private readonly string _folder;
@@ -57,10 +57,16 @@ public class ModuleLoader
             }
         }
 
-        return StartLoading();
+        var tasks = new List<Task>();
+        for (var i = 0; i < 100; i++)
+        {
+            tasks.Add(Task.Run(StartLoading));
+        }
+
+        return Task.WhenAll(tasks);
     }
 
-    private Task StartLoading()
+    private async Task StartLoading()
     {
         while (_typesToImport.TryDequeue(out var typeReference))
         {
@@ -69,16 +75,14 @@ public class ModuleLoader
                 continue;
             }
 
-            var type = GetTypeByReference(typeReference);
+            var type = await GetTypeByReference(typeReference);
             Types.Add(type);
 
             if (IsUserModule(type))
             {
-                GetTypeReferences(type);
+                await GetTypeReferences(type);
             }
         }
-
-        return Task.CompletedTask;
     }
 
     private bool IsUserModule(TypeReference type)
@@ -129,7 +133,7 @@ public class ModuleLoader
         }
     }
 
-    private void GetTypeReferences(TypeDefinition typeDefinition)
+    private async Task GetTypeReferences(TypeDefinition typeDefinition)
     {
         var instructions = new List<Instruction>();
         //add method, property and field instructions
@@ -158,7 +162,7 @@ public class ModuleLoader
                 case MethodReference methodReference:
                     if (methodReference.DeclaringType != typeDefinition)
                     {
-                        var toType = GetTypeByReference(methodReference.DeclaringType);
+                        var toType = await GetTypeByReference(methodReference.DeclaringType);
                         References.Add(new Reference
                         {
                             FromType = typeDefinition,
@@ -202,7 +206,7 @@ public class ModuleLoader
         }
     }
 
-    private TypeDefinition GetTypeByReference(TypeReference typeReference)
+    private async Task<TypeDefinition> GetTypeByReference(TypeReference typeReference)
     {
         var anr = typeReference.Scope as AssemblyNameReference;
         if (anr != null && _failedAssemblies.Contains(anr.FullName)) return GetDefault(typeReference);
@@ -214,7 +218,7 @@ public class ModuleLoader
         {
             if (!IsUserModule(typeReference)) return GetDefault(typeReference);
 
-            var referencedAssembly = GetReferencedAssemmbly(typeReference);
+            var referencedAssembly = await GetReferencedAssemmbly(typeReference);
             if (referencedAssembly == null) return GetDefault(typeReference);
             if (typeReference.Module.Assembly.Equals(referencedAssembly)) return typeReference.Resolve();
 
@@ -235,23 +239,31 @@ public class ModuleLoader
         TypeDefinition GetDefault(TypeReference r) => new(r.Namespace, r.Name, TypeAttributes.Class);
     }
 
-    private AssemblyDefinition? GetReferencedAssemmbly(TypeReference typeReference)
+    private async Task<AssemblyDefinition?> GetReferencedAssemmbly(TypeReference typeReference)
     {
+        await _assemlbySemaphore.WaitAsync();
         var referencedAssembly = _loadedAssemblies.FirstOrDefault(a => a.FullName.Equals(typeReference.AssemblyName()));
-        if (referencedAssembly == null)
+        if (referencedAssembly != null)
         {
-            try
-            {
-                referencedAssembly =
-                    AssemblyDefinition.ReadAssembly(Path.Combine(_folder, $"{typeReference.Scope.Name}.dll"));
-                LoadAssembly(referencedAssembly);
-            }
-            catch (Exception e)
-            {
-                return null;
-            }
+            _assemlbySemaphore.Release();
+            return referencedAssembly;
         }
 
+        try
+        {
+            referencedAssembly =
+                AssemblyDefinition.ReadAssembly(Path.Combine(_folder, $"{typeReference.Scope.Name}.dll"));
+        }
+        catch (Exception e)
+        {
+            return null;
+        }
+        finally
+        {
+            _assemlbySemaphore.Release();
+        }
+        LoadAssembly(referencedAssembly);
+        
         return referencedAssembly;
     }
 }
