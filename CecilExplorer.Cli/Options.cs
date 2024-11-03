@@ -13,6 +13,15 @@ public interface IOptions
     string Output { get; set; }
     
     string Term { get; set; }
+    
+    Level Level { get; set; }
+}
+
+public enum Level
+{
+    Module,
+    Class,
+    Method
 }
 
 [Verb("dump", true, HelpText = "Creates a dump of the assembly")]
@@ -32,6 +41,9 @@ public class DumpOptions : IOptions
 
     [Option('t', "term", Required = false, HelpText = "Filter term")]
     public string Term { get; set; } = string.Empty;
+
+    [Option('l', "level", Required = false, HelpText = "Level of detail")]
+    public Level Level { get; set; } = Level.Class;
 }
 
 [Verb("trace", HelpText = "Trace references")]
@@ -57,4 +69,7 @@ public class TraceOptions : IOptions
     
     [Option('t', "term", Required = false, HelpText = "Filter term")]
     public string Term { get; set; } = string.Empty;
+    
+    [Option('l', "level", Required = false, HelpText = "Level of detail")]
+    public Level Level { get; set; } = Level.Class;
 }
