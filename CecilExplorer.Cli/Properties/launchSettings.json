@@ -3,14 +3,21 @@
   "profiles": {
     "CecilExplorer.Cli": {
       "commandName": "Project",
-      "commandLineArgs": "dump -a C:\\workspaces\\my\\CecilExplorer\\CecilExplorer.Cli\\bin\\Debug\\net8.0\\CecilExplorer.Cli.dll -o out.md -i CecilExplorer* -t CecilExplorer.MermaidExport",
+      "commandLineArgs": "trace -a \"C:\\workspaces\\test\\ConsoleApp2\\ConsoleApp2\\bin\\Debug\\net8.0\\ConsoleApp2.dll\" -o out.md -i * -f ConsoleApp2.A -t LibraryC.C -l Method",
       "environmentVariables": {
         
       }
     },
-    "CecilExplorer.Cli with Valk": {
+    "CecilExplorer.Cli dump Valk": {
       "commandName": "Project",
-      "commandLineArgs": "dump -a C:\\workspaces\\valk\\web_ValkPlatform\\Valk.Website\\bin\\Valk.Website.dll -o out.md -i Valk* -t Valk.Website.Classes -l Module",
+      "commandLineArgs": "dump -a C:\\workspaces\\valk\\web_ValkPlatform\\Valk.Website\\bin\\Valk.Website.dll -o out.md -i Valk* -t *Signature* -l Method",
+      "environmentVariables": {
+
+      }
+    },
+    "CecilExplorer.Cli trace Valk": {
+      "commandName": "Project",
+      "commandLineArgs": "trace -a C:\\workspaces\\valk\\web_ValkPlatform\\Valk.Website\\bin\\Valk.Website.dll -o out.md -i Valk* -f Valk.Website.Classes.Flows.SelfCheckinFlow -t Valk.Datalayer.Realtime.OrderDal -l Method",
       "environmentVariables": {
 
       }

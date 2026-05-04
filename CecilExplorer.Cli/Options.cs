@@ -12,8 +12,6 @@ public interface IOptions
     
     string Output { get; set; }
     
-    string Term { get; set; }
-    
     Level Level { get; set; }
 }
 
@@ -66,9 +64,6 @@ public class TraceOptions : IOptions
     
     [Option('o', "output", Required = false, HelpText = "Output file")]
     public string Output { get; set; } = string.Empty;
-    
-    [Option('t', "term", Required = false, HelpText = "Filter term")]
-    public string Term { get; set; } = string.Empty;
     
     [Option('l', "level", Required = false, HelpText = "Level of detail")]
     public Level Level { get; set; } = Level.Class;

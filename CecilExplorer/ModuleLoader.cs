@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using Mono.Cecil;
@@ -7,42 +8,28 @@ namespace CecilExplorer;
 
 public class ModuleLoader
 {
-    private static readonly SemaphoreSlim _assemlbySemaphore = new(1, 1);
+    private static readonly SemaphoreSlim AssemlbySemaphore = new(1, 1);
+    private static readonly SemaphoreSlim TypeSemaphore = new(1, 1);
+    
     private readonly ConcurrentBag<AssemblyDefinition> _loadedAssemblies = [];
     private readonly ConcurrentQueue<TypeReference> _typesToImport = [];
     private readonly Regex _internalNamePattern;
 
-    public ConcurrentBag<TypeDefinition> Types = [];
-    public ConcurrentBag<Reference> References = [];
-    public ConcurrentBag<ModuleDefinition> Modules = [];
+    public readonly Dictionary<string,TypeDefinition> Types = new ();
+    public readonly ConcurrentBag<Reference> References = [];
+    public readonly ConcurrentBag<ModuleDefinition> Modules = [];
     private readonly string _fileName;
     private readonly ConcurrentBag<string> _failedAssemblies = new();
     private readonly string _folder;
 
     public ModuleLoader(string file, string internalNamePattern)
     {
-        _internalNamePattern = GetPattern(internalNamePattern);
+        _internalNamePattern = PatternHelper.GetPattern(internalNamePattern);
         _fileName = file;
         _folder = Path.GetDirectoryName(file) ?? string.Empty;
     }
 
-    private Regex GetPattern(string internalNamePattern)
-    {
-        var pattern = string.Join("|", internalNamePattern.Split(',')
-            .Select(s => s
-                .Replace(".", "\\.")
-                .Replace("*", ".{0,100}")
-                .Replace("?", string.Empty)
-                .Replace("+", string.Empty)
-                .Replace("[", string.Empty)
-                .Replace("]", string.Empty)
-                .Trim())
-        );
-
-        return new Regex(pattern, RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
-    }
-
-    public Task Load()
+    public async Task<Workspace> Load()
     {
         var assembly = AssemblyDefinition.ReadAssembly(_fileName);
         _loadedAssemblies.Add(assembly);
@@ -58,30 +45,69 @@ public class ModuleLoader
         }
 
         var tasks = new List<Task>();
-        for (var i = 0; i < 100; i++)
+        for (var i = 0; i < 1; i++)
         {
             tasks.Add(Task.Run(StartLoading));
         }
 
-        return Task.WhenAll(tasks);
+        await Task.WhenAll(tasks);
+        return new Workspace(_loadedAssemblies.ToArray(), Types.Values.ToArray(), References.ToArray());
     }
 
     private async Task StartLoading()
     {
         while (_typesToImport.TryDequeue(out var typeReference))
         {
-            if (Types.Any(t => t.FullName.Equals(typeReference.GetElementType().FullName)))
+            if (Types.ContainsKey(typeReference.GetElementType().FullName))
             {
                 continue;
             }
 
-            var type = await GetTypeByReference(typeReference);
-            Types.Add(type);
+            var type = await LoadTypeByReference(typeReference);
+            await TypeSemaphore.WaitAsync();
+            Types.TryAdd(type.FullName, type);
+            TypeSemaphore.Release();
 
             if (IsUserModule(type))
             {
-                await GetTypeReferences(type);
+                await LoadTypesFromInheritance(type);
+                await LoadTypesFromInstructions(type);
             }
+        }
+    }
+
+    private async Task LoadTypesFromInheritance(TypeDefinition typeDefinition)
+    {
+        if (typeDefinition.BaseType != null)
+        {
+            var toType = await LoadTypeByReference(typeDefinition.BaseType);
+            References.Add(new Reference
+            {
+                FromType = typeDefinition,
+                ToType = toType,
+                ReferenceType = typeDefinition.BaseType,
+                FromName = typeDefinition.FullName,
+                ToName = toType.FullName
+            });
+            if (IsUserModule(toType))
+            {
+                _typesToImport.Enqueue(toType);
+            }
+        }
+        
+        foreach (var interfaceDef in typeDefinition.Interfaces)
+        {
+            var toInterface = await LoadTypeByReference(interfaceDef.InterfaceType);
+            References.Add(new Reference
+            {
+                FromType = typeDefinition,
+                ToType = toInterface,
+                ReferenceType = interfaceDef,
+                FromName = typeDefinition.FullName,
+                ToName = toInterface.FullName
+            });
+            if (IsUserModule(interfaceDef.InterfaceType))
+                _typesToImport.Enqueue(interfaceDef.InterfaceType);
         }
     }
 
@@ -97,7 +123,7 @@ public class ModuleLoader
             return type.Module != null
                 ? _internalNamePattern.IsMatch(type.Module.Assembly.Name.Name)
                   && !type.Module.Assembly.IsSystemLibrary()
-                : _internalNamePattern.IsMatch(type.FullName);
+                : _internalNamePattern.IsMatch(type.FullName) && !type.IsSystemReference();
         }
         catch (Exception e)
         {
@@ -133,7 +159,7 @@ public class ModuleLoader
         }
     }
 
-    private async Task GetTypeReferences(TypeDefinition typeDefinition)
+    private async Task LoadTypesFromInstructions(TypeDefinition typeDefinition)
     {
         var instructions = new List<Instruction>();
         //add method, property and field instructions
@@ -160,15 +186,15 @@ public class ModuleLoader
                     currentMethod = methodDefinition;
                     break;
                 case MethodReference methodReference:
-                    if (methodReference.DeclaringType != typeDefinition)
+                    if (true)
                     {
-                        var toType = await GetTypeByReference(methodReference.DeclaringType);
+                        var toType = await LoadTypeByReference(methodReference.DeclaringType);
                         References.Add(new Reference
                         {
                             FromType = typeDefinition,
                             ToType = toType,
                             ReferenceType = methodReference,
-                            FromName = currentMethod?.Name,
+                            FromName = currentMethod?.Name ?? "_",
                             ToName = methodReference.Name
                         });
                         if (IsUserModule(methodReference.DeclaringType))
@@ -206,12 +232,12 @@ public class ModuleLoader
         }
     }
 
-    private async Task<TypeDefinition> GetTypeByReference(TypeReference typeReference)
+    private async Task<TypeDefinition> LoadTypeByReference(TypeReference typeReference)
     {
         var anr = typeReference.Scope as AssemblyNameReference;
         if (anr != null && _failedAssemblies.Contains(anr.FullName)) return GetDefault(typeReference);
 
-        var loadedType = Types.FirstOrDefault(t => t.FullName.Equals(typeReference.FullName));
+        var loadedType = Types.GetValueOrDefault(typeReference.FullName);
         if (loadedType != null) return loadedType;
 
         try
@@ -224,7 +250,6 @@ public class ModuleLoader
 
             var type = referencedAssembly.Modules
                 .Select(m => m.GetTypes().First(t => t.FullName.Equals(typeReference.FullName))).First();
-            if (!Types.Contains(type)) Types.Add(type);
 
             return type;
         }
@@ -241,11 +266,11 @@ public class ModuleLoader
 
     private async Task<AssemblyDefinition?> GetReferencedAssemmbly(TypeReference typeReference)
     {
-        await _assemlbySemaphore.WaitAsync();
+        await AssemlbySemaphore.WaitAsync();
         var referencedAssembly = _loadedAssemblies.FirstOrDefault(a => a.FullName.Equals(typeReference.AssemblyName()));
         if (referencedAssembly != null)
         {
-            _assemlbySemaphore.Release();
+            AssemlbySemaphore.Release();
             return referencedAssembly;
         }
 
@@ -253,6 +278,7 @@ public class ModuleLoader
         {
             referencedAssembly =
                 AssemblyDefinition.ReadAssembly(Path.Combine(_folder, $"{typeReference.Scope.Name}.dll"));
+            LoadAssembly(referencedAssembly);
         }
         catch (Exception e)
         {
@@ -260,10 +286,9 @@ public class ModuleLoader
         }
         finally
         {
-            _assemlbySemaphore.Release();
+            AssemlbySemaphore.Release();
         }
-        LoadAssembly(referencedAssembly);
-        
+
         return referencedAssembly;
     }
 }

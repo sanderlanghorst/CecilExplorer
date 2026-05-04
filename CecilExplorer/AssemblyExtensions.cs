@@ -12,6 +12,12 @@ public static class AssemblyExtensions
         "50cebf1cceb9d05e", //Mono.Cecil
         "31bf3856ad364e35", //System.Web
     };
+
+    public static bool IsSystemReference(this TypeReference typeReference)
+    {
+        return typeReference.FullName.StartsWith(System);
+    }
+    
     public static bool IsSystemLibrary(this AssemblyDefinition assembly)
     {
         return assembly.FullName.StartsWith(System) || SystemAssemblies.Any(assembly.FullName.Contains);

@@ -14,4 +14,12 @@ public class Reference
     {
         return $"{FromType.FullName} ({FromName}) -> {ToType.FullName} ({ToName})";
     }
+
+    public bool Intersects(Reference otherReference)
+    {
+        return (otherReference.FromType == FromType && otherReference.FromName == FromName)
+            || (otherReference.ToType == FromType && otherReference.ToName == FromName)
+            || (otherReference.FromType == ToType && otherReference.FromName == ToName)
+            || (otherReference.ToType == ToType && otherReference.ToName == ToName);
+    }
 }

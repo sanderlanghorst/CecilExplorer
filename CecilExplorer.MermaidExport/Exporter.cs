@@ -1,12 +1,10 @@
 ﻿using System.Text;
-using Mono.Cecil;
 
 namespace CecilExplorer.MermaidExport;
 
 public class Exporter
 {
     private readonly string _path;
-    private readonly string _filterTerm;
     private readonly DetailLevel _detailLevel;
 
     private static readonly char[] ValidChars =
@@ -16,33 +14,36 @@ public class Exporter
         'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '-'
     };
 
-    public Exporter(string path, string filterTerm, DetailLevel detailLevel)
+    public Exporter(string path, DetailLevel detailLevel)
     {
         _path = path;
-        _filterTerm = filterTerm;
         _detailLevel = detailLevel;
     }
 
-    public void SaveToFile(ModuleLoader loader)
+    public long SaveToFile(Workspace workspace)
     {
         var sb = new StringBuilder();
         sb.AppendLine("```mermaid");
-        ExportFlowChart(sb, loader);
+        ExportFlowChart(sb, workspace);
         sb.AppendLine("```");
         File.WriteAllText(_path, sb.ToString());
+        return sb.Length;
     }
 
-    private static string Sanitize(string name)
+    private static string Sanitize(string? name)
     {
-        return new string(name.Where(ValidChars.Contains).ToArray());
+        return name is null 
+            ? string.Empty 
+            : new string(name.Where(ValidChars.Contains).ToArray());
     }
 
-    private void ExportFlowChart(StringBuilder sb, ModuleLoader loader)
+    private void ExportFlowChart(StringBuilder sb, Workspace workspace)
     {
         // create a mermaid class diagram
         sb.AppendLine("flowchart LR");
-        foreach (var moduleGroup in loader.References
-                     .Where(r => SelectReference(r) && !IsSystemLibrary(r.ToType))
+        foreach (var moduleGroup in workspace.References
+                     .Where(r => SelectReference(r))
+                     .OrderBy(r => r.FromType.FullName)
                      .SelectMany(r => new []
                      {
                          (module: r.FromType.Module.Name, @class: r.FromType.FullName, method: r.FromName),
@@ -59,7 +60,7 @@ public class Exporter
                 continue;
             }
 
-            sb.AppendLine($"{Indent(indent++)}subgraph {Sanitize(moduleGroup.Key)}");
+            sb.AppendLine($"{Indent(indent++)}subgraph {Sanitize(moduleGroup.Key)} [\"{moduleGroup.Key}\"]");
 
             foreach (var classGroup in moduleGroup)
             {
@@ -69,7 +70,7 @@ public class Exporter
                     continue;
                 }
 
-                sb.AppendLine($"{Indent(indent++)}subgraph {Sanitize(classGroup.Key.@class)}");
+                sb.AppendLine($"{Indent(indent++)}subgraph {Sanitize(classGroup.Key.@class)}_c[\"{classGroup.Key.@class}\"]");
 
                 foreach (var methodGroup in classGroup)
                 {
@@ -84,8 +85,8 @@ public class Exporter
 
         try
         {
-            foreach (var tref in loader.References
-                         .Where(r => SelectReference(r) && !IsSystemLibrary(r.ToType))
+            foreach (var tref in workspace.References
+                         .Where(r => SelectReference(r))
                          .GroupBy(SelectReferenceGroupKey))
             {
                 sb.Append("\t");
@@ -121,17 +122,9 @@ public class Exporter
         }
     }
 
-    private bool IsSystemLibrary(TypeDefinition toType)
-    {
-        return toType.Module == null ||
-               toType.Module.Assembly == null ||
-               toType.Module.Assembly.IsSystemLibrary();
-    }
-
     private bool SelectReference(Reference reference)
     {
-        return (_filterTerm == string.Empty || reference.FromType.FullName.Contains(_filterTerm) || reference.ToType.FullName.Contains(_filterTerm))
-               && (_detailLevel > DetailLevel.Module || !reference.FromType.Module.Equals(reference.ToType.Module))
+        return (_detailLevel > DetailLevel.Module || !reference.FromType.Module.Equals(reference.ToType.Module))
                && (_detailLevel > DetailLevel.Class || !reference.FromType.Equals(reference.ToType));
     }
 
